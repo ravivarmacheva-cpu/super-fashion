@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Super Fashion - Trendy Clothing Online</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<header id="site-header"></header>
+
+<section class="hero">
+  <div class="container">
+    <h1>Style that makes you <span>Super</span></h1>
+    <p>Latest trends for men, women and kids. Free shipping on orders above ₹999.</p>
+    <a class="btn" href="#shop">Shop Now</a>
+  </div>
+</section>
+
+<main class="container" id="shop">
+  <div class="toolbar">
+    <input id="search" type="search" placeholder="Search clothes...">
+    <div class="chips" id="chips"></div>
+  </div>
+  <div class="grid" id="grid"></div>
+  <div class="empty" id="empty" style="display:none">No products found.</div>
+</main>
+
+<div id="site-footer"></div>
+<script src="/js/app.js"></script>
+<script>
+let category = 'All';
+let timer;
+
+async function loadCategories() {
+  const { categories } = await api('/api/categories');
+  const all = ['All', ...categories];
+  $('#chips').innerHTML = all.map((c) => `<button class="chip ${c === category ? 'active' : ''}" data-c="${esc(c)}">${esc(c)}</button>`).join('');
+  $$('.chip').forEach((b) => (b.onclick = () => { category = b.dataset.c; loadCategories(); loadProducts(); }));
+}
+
+async function loadProducts() {
+  const q = $('#search').value.trim();
+  const { products } = await api('/api/products?category=' + encodeURIComponent(category) + '&q=' + encodeURIComponent(q));
+  $('#empty').style.display = products.length ? 'none' : 'block';
+  $('#grid').innerHTML = products.map((p) => `
+    <a class="card" href="/product?id=${p.id}">
+      <div class="img">${productImage(p)}${p.stock <= 0 ? '<span class="tag">Sold out</span>' : ''}</div>
+      <div class="info">
+        <div class="cat">${esc(p.category)}</div>
+        <div class="name">${esc(p.name)}</div>
+        <div class="price">${money(p.price)}</div>
+      </div>
+    </a>`).join('');
+}
+
+$('#search').addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(loadProducts, 300); });
+initHeader();
+loadCategories().then(loadProducts).catch((e) => toast(e.message, true));
+</script>
+</body>
+</html>

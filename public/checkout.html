@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cart & Checkout - Super Fashion</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<header id="site-header"></header>
+<main class="container">
+  <h1 class="page-title">Your Cart</h1>
+  <div id="empty" class="panel empty" style="display:none">
+    Your cart is empty.<br><br><a class="btn" href="/">Start Shopping</a>
+  </div>
+  <div class="checkout" id="checkout" style="display:none">
+    <div>
+      <div class="panel" id="items"></div>
+      <div class="panel" style="margin-top:20px">
+        <h2 style="margin-top:0">Delivery address</h2>
+        <form id="addr">
+          <div class="row">
+            <div><label>Full name</label><input id="a-name" required autocomplete="name"></div>
+            <div><label>Phone</label><input id="a-phone" type="tel" required autocomplete="tel"></div>
+          </div>
+          <label>Address</label>
+          <textarea id="a-line" required autocomplete="street-address" placeholder="House no, street, area"></textarea>
+          <div class="row3">
+            <div><label>City</label><input id="a-city" required autocomplete="address-level2"></div>
+            <div><label>State</label><input id="a-state" required autocomplete="address-level1"></div>
+            <div><label>Pincode</label><input id="a-pin" required inputmode="numeric" autocomplete="postal-code"></div>
+          </div>
+        </form>
+      </div>
+    </div>
+    <div class="panel">
+      <h2 style="margin-top:0">Order summary</h2>
+      <div class="sum"><span>Subtotal</span><span id="sub"></span></div>
+      <div class="sum"><span>Shipping</span><span id="ship"></span></div>
+      <div class="sum total"><span>Total</span><span id="total"></span></div>
+      <h3 style="margin-bottom:0">Payment</h3>
+      <label class="pay-opt" id="opt-online" style="display:none"><input type="radio" name="pay" value="online"> <span>Pay online (UPI / Cards / Netbanking)</span></label>
+      <label class="pay-opt sel" id="opt-cod"><input type="radio" name="pay" value="cod" checked> <span>Cash on Delivery</span></label>
+      <button class="btn block" style="margin-top:18px" id="place">Place Order</button>
+    </div>
+  </div>
+</main>
+<div id="site-footer"></div>
+<script src="/js/app.js"></script>
+<script>
+let cfg = { razorpayEnabled: false, freeShippingAbove: 999, shippingFee: 79 };
+
+function render() {
+  const cart = Cart.get();
+  $('#empty').style.display = cart.length ? 'none' : 'block';
+  $('#checkout').style.display = cart.length ? 'grid' : 'none';
+  $('#items').innerHTML = cart.map((i) => `
+    <div class="line">
+      <div class="thumb">${productImage(i)}</div>
+      <div class="meta">
+        <div class="n">${esc(i.name)}</div>
+        <div class="s">Size: ${esc(i.size || '-')} · ${money(i.price)}</div>
+        <div class="qty" style="margin-top:6px">
+          <button data-a="minus" data-id="${i.id}" data-s="${esc(i.size)}">−</button><span>${i.qty}</span><button data-a="plus" data-id="${i.id}" data-s="${esc(i.size)}">+</button>
+        </div>
+      </div>
+      <div style="text-align:right"><strong>${money(i.price * i.qty)}</strong><br>
+        <button class="btn ghost small" style="margin-top:6px" data-a="rm" data-id="${i.id}" data-s="${esc(i.size)}">Remove</button></div>
+    </div>`).join('');
+  $$('#items button').forEach((b) => (b.onclick = () => {
+    const id = parseInt(b.dataset.id), s = b.dataset.s;
+    const it = Cart.get().find((x) => x.id === id && x.size === s);
+    if (b.dataset.a === 'rm') Cart.setQty(id, s, 0);
+    else Cart.setQty(id, s, it.qty + (b.dataset.a === 'plus' ? 1 : -1));
+    render();
+  }));
+  const sub = Cart.subtotal();
+  const ship = sub >= cfg.freeShippingAbove ? 0 : cfg.shippingFee;
+  $('#sub').textContent = money(sub);
+  $('#ship').textContent = ship ? money(ship) : 'FREE';
+  $('#total').textContent = money(sub + ship);
+}
+
+function loadRazorpay() {
+  return new Promise((resolve, reject) => {
+    if (window.Razorpay) return resolve();
+    const s = document.createElement('script');
+    s.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('Could not load payment window. Check your internet.'));
+    document.body.appendChild(s);
+  });
+}
+
+function getAddress() {
+  const f = $('#addr');
+  if (!f.reportValidity()) return null;
+  return { name: $('#a-name').value, phone: $('#a-phone').value, line: $('#a-line').value, city: $('#a-city').value, state: $('#a-state').value, pincode: $('#a-pin').value };
+}
+
+$$('input[name=pay]').forEach((r) => (r.onchange = () => {
+  $('#opt-online').classList.toggle('sel', r.value === 'online' && r.checked);
+  $('#opt-cod').classList.toggle('sel', r.value === 'cod' && r.checked);
+  $$('input[name=pay]').forEach((x) => x.closest('.pay-opt').classList.toggle('sel', x.checked));
+}));
+
+$('#place').onclick = async () => {
+  const address = getAddress();
+  if (!address) return;
+  const items = Cart.get().map((i) => ({ id: i.id, qty: i.qty, size: i.size }));
+  const method = $('input[name=pay]:checked').value;
+  const btn = $('#place');
+  btn.disabled = true;
+  try {
+    if (method === 'cod') {
+      await api('/api/orders', { method: 'POST', body: { items, address } });
+      Cart.clear();
+      location.href = '/orders?placed=1';
+      return;
+    }
+    const d = await api('/api/payments/create', { method: 'POST', body: { items, address } });
+    await loadRazorpay();
+    const rzp = new Razorpay({
+      key: d.key,
+      amount: d.amount,
+      currency: d.currency,
+      name: 'Super Fashion',
+      description: 'Order #' + d.orderId,
+      order_id: d.razorpayOrderId,
+      prefill: { name: d.customer.name, email: d.customer.email, contact: d.customer.phone },
+      theme: { color: '#e4572e' },
+      handler: async (resp) => {
+        try {
+          await api('/api/payments/verify', { method: 'POST', body: { orderId: d.orderId, ...resp } });
+          Cart.clear();
+          location.href = '/orders?placed=1';
+        } catch (e) { toast(e.message, true); btn.disabled = false; }
+      },
+      modal: { ondismiss: () => { btn.disabled = false; } },
+    });
+    rzp.on('payment.failed', () => { toast('Payment failed. Please try again.', true); btn.disabled = false; });
+    rzp.open();
+  } catch (e) {
+    toast(e.message, true);
+    btn.disabled = false;
+  }
+};
+
+(async () => {
+  const user = await initHeader();
+  if (!user && Cart.count() > 0) {
+    // allow viewing cart, but must login to order
+    $('#place').textContent = 'Login to place order';
+    $('#place').onclick = () => (location.href = '/login?next=/checkout');
+  }
+  try { cfg = await api('/api/config'); } catch (_) {}
+  if (cfg.razorpayEnabled) {
+    $('#opt-online').style.display = 'flex';
+    $('#opt-online input').checked = true;
+    $('#opt-cod').classList.remove('sel');
+    $('#opt-online').classList.add('sel');
+  }
+  if (user) $('#a-name').value = user.name;
+  render();
+})();
+</script>
+</body>
+</html>

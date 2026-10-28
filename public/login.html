@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Login - Super Fashion</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<header id="site-header"></header>
+<main class="container">
+  <div class="panel auth">
+    <h1 id="title">Login</h1>
+    <form id="form">
+      <div id="name-wrap" style="display:none">
+        <label for="name">Full name</label>
+        <input id="name" autocomplete="name">
+      </div>
+      <label for="email">Email</label>
+      <input id="email" type="email" autocomplete="email" required>
+      <label for="password">Password</label>
+      <input id="password" type="password" autocomplete="current-password" required minlength="6">
+      <button class="btn block" style="margin-top:18px" id="submit">Login</button>
+    </form>
+    <div class="switch" id="switch">New here? <a href="#" id="toggle">Create an account</a></div>
+  </div>
+</main>
+<div id="site-footer"></div>
+<script src="/js/app.js"></script>
+<script>
+let register = new URLSearchParams(location.search).get('mode') === 'register';
+function render() {
+  $('#title').textContent = register ? 'Create account' : 'Login';
+  $('#submit').textContent = register ? 'Sign up' : 'Login';
+  $('#name-wrap').style.display = register ? 'block' : 'none';
+  $('#name').required = register;
+  $('#password').autocomplete = register ? 'new-password' : 'current-password';
+  $('#switch').innerHTML = register ? 'Already have an account? <a href="#" id="toggle">Login</a>' : 'New here? <a href="#" id="toggle">Create an account</a>';
+  $('#toggle').onclick = (e) => { e.preventDefault(); register = !register; render(); };
+}
+render();
+initHeader().then((u) => { if (u) location.href = u.role === 'admin' ? '/admin' : '/'; });
+
+$('#form').onsubmit = async (e) => {
+  e.preventDefault();
+  const btn = $('#submit');
+  btn.disabled = true;
+  try {
+    const body = { email: $('#email').value, password: $('#password').value };
+    if (register) body.name = $('#name').value;
+    const { user } = await api(register ? '/api/auth/register' : '/api/auth/login', { method: 'POST', body });
+    location.href = nextParam() || (user.role === 'admin' ? '/admin' : '/');
+  } catch (err) {
+    toast(err.message, true);
+    btn.disabled = false;
+  }
+};
+</script>
+</body>
+</html>

@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Product - Super Fashion</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<header id="site-header"></header>
+<main class="container" id="main"><div class="empty">Loading...</div></main>
+<div id="site-footer"></div>
+<script src="/js/app.js"></script>
+<script>
+initHeader();
+(async () => {
+  const id = new URLSearchParams(location.search).get('id');
+  try {
+    const { product: p } = await api('/api/products/' + encodeURIComponent(id));
+    document.title = p.name + ' - Super Fashion';
+    const sizes = p.sizes.split(',').filter(Boolean);
+    let size = sizes[0] || '';
+    let qty = 1;
+    const out = p.stock <= 0;
+    $('#main').innerHTML = `
+      <div class="product-wrap">
+        <div class="big">${productImage(p)}</div>
+        <div>
+          <div class="cat" style="color:var(--muted);text-transform:uppercase;font-size:.8rem;letter-spacing:1px">${esc(p.category)}</div>
+          <h1>${esc(p.name)}</h1>
+          <div class="price">${money(p.price)}</div>
+          <p style="color:var(--muted)">${esc(p.description).replace(/\n/g, '<br>')}</p>
+          <label>Size</label>
+          <div class="sizes" id="sizes">${sizes.map((s, i) => `<button class="size ${i === 0 ? 'active' : ''}" data-s="${esc(s)}">${esc(s)}</button>`).join('')}</div>
+          <label>Quantity</label>
+          <div class="qty"><button id="minus">−</button><span id="q">1</span><button id="plus">+</button></div>
+          <p style="color:${p.stock <= 5 ? 'var(--bad)' : 'var(--ok)'};font-size:.9rem">${out ? 'Out of stock' : p.stock <= 5 ? 'Only ' + p.stock + ' left!' : 'In stock'}</p>
+          <button class="btn block" id="add" ${out ? 'disabled' : ''}>Add to Cart</button>
+          <a class="btn ghost block" style="margin-top:10px" href="/">Continue Shopping</a>
+        </div>
+      </div>`;
+    $$('.size').forEach((b) => (b.onclick = () => { $$('.size').forEach((x) => x.classList.remove('active')); b.classList.add('active'); size = b.dataset.s; }));
+    $('#minus').onclick = () => { qty = Math.max(1, qty - 1); $('#q').textContent = qty; };
+    $('#plus').onclick = () => { qty = Math.min(Math.min(20, p.stock), qty + 1); $('#q').textContent = qty; };
+    $('#add').onclick = () => { Cart.add(p, size, qty); toast('Added to cart'); };
+  } catch (e) {
+    $('#main').innerHTML = '<div class="empty">Product not found. <a href="/" style="color:var(--accent)">Back to shop</a></div>';
+  }
+})();
+</script>
+</body>
+</html>

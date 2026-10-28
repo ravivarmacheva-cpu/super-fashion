@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My Orders - Super Fashion</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<header id="site-header"></header>
+<main class="container">
+  <h1 class="page-title">My Orders</h1>
+  <div id="ok" class="panel" style="display:none;margin-bottom:16px;border-color:var(--ok)">🎉 Thank you! Your order has been placed.</div>
+  <div id="list"></div>
+</main>
+<div id="site-footer"></div>
+<script src="/js/app.js"></script>
+<script>
+const cls = (s) => String(s).replace(/\s+/g, '');
+(async () => {
+  const user = await initHeader();
+  if (!user) return (location.href = '/login?next=/orders');
+  if (new URLSearchParams(location.search).get('placed')) $('#ok').style.display = 'block';
+  try {
+    const { orders } = await api('/api/orders/mine');
+    if (!orders.length) {
+      $('#list').innerHTML = '<div class="panel empty">No orders yet. <a href="/" style="color:var(--accent)">Start shopping</a></div>';
+      return;
+    }
+    $('#list').innerHTML = orders.filter((o) => o.status !== 'Awaiting Payment' || o.payment_status === 'Paid').map((o) => `
+      <div class="panel" style="margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">
+          <div><strong>Order #${o.id}</strong><br><span style="color:var(--muted);font-size:.85rem">${new Date(o.created_at).toLocaleString('en-IN')}</span></div>
+          <div style="text-align:right"><span class="pill ${cls(o.status)}">${esc(o.status)}</span>
+            <span class="pill ${cls(o.payment_status)}">${esc(o.payment_method)} · ${esc(o.payment_status)}</span></div>
+        </div>
+        ${o.items.map((i) => `
+          <div class="line">
+            <div class="thumb">${productImage(i)}</div>
+            <div class="meta"><div class="n">${esc(i.name)}</div><div class="s">Size ${esc(i.size || '-')} · Qty ${i.qty}</div></div>
+            <strong>${money(i.price * i.qty)}</strong>
+          </div>`).join('')}
+        <div class="sum total"><span>Total</span><span>${money(o.total)}</span></div>
+        <div style="color:var(--muted);font-size:.85rem">Deliver to: ${esc(o.address.name)}, ${esc(o.address.line)}, ${esc(o.address.city)}, ${esc(o.address.state)} - ${esc(o.address.pincode)}</div>
+      </div>`).join('');
+  } catch (e) { toast(e.message, true); }
+})();
+</script>
+</body>
+</html>

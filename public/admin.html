@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin - Super Fashion</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<header id="site-header"></header>
+<main class="container">
+  <h1 class="page-title">Admin Panel</h1>
+  <div class="admin-tabs">
+    <button class="chip active" data-tab="dash">Dashboard</button>
+    <button class="chip" data-tab="products">Products</button>
+    <button class="chip" data-tab="orders">Orders</button>
+  </div>
+
+  <!-- Dashboard -->
+  <section id="tab-dash">
+    <div class="stats" id="stats"></div>
+  </section>
+
+  <!-- Products -->
+  <section id="tab-products" style="display:none">
+    <div class="panel" style="margin-bottom:20px">
+      <h2 style="margin-top:0" id="form-title">Add new product</h2>
+      <form id="pform">
+        <input type="hidden" id="p-id">
+        <div class="row">
+          <div><label>Product name</label><input id="p-name" required></div>
+          <div><label>Category</label><input id="p-cat" list="cats" placeholder="Men, Women, Kids..." required><datalist id="cats"></datalist></div>
+        </div>
+        <div class="row3">
+          <div><label>Price (₹)</label><input id="p-price" type="number" min="0" step="0.01" required></div>
+          <div><label>Stock</label><input id="p-stock" type="number" min="0" step="1" required></div>
+          <div><label>Sizes (comma separated)</label><input id="p-sizes" value="S,M,L,XL"></div>
+        </div>
+        <label>Description</label>
+        <textarea id="p-desc"></textarea>
+        <div class="row">
+          <div><label>Upload image</label><input id="p-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif"></div>
+          <div><label>...or image link (URL)</label><input id="p-url" type="url" placeholder="https://..."></div>
+        </div>
+        <label class="check"><input type="checkbox" id="p-active" checked> Show in store</label>
+        <div class="actions" style="margin-top:16px">
+          <button class="btn" id="p-save">Save product</button>
+          <button type="button" class="btn ghost" id="p-cancel" style="display:none">Cancel edit</button>
+        </div>
+      </form>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Image</th><th>Name</th><th>Category</th><th>Price</th><th>Stock</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody id="ptable"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Orders -->
+  <section id="tab-orders" style="display:none">
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Order</th><th>Customer</th><th>Items</th><th>Total</th><th>Payment</th><th>Status</th></tr></thead>
+        <tbody id="otable"></tbody>
+      </table>
+    </div>
+  </section>
+  <div style="height:50px"></div>
+</main>
+<div id="site-footer"></div>
+<script src="/js/app.js"></script>
+<script>
+const cls = (s) => String(s).replace(/\s+/g, '');
+const STATUSES = ['Pending', 'Processing', 'Shipped', 'Delivered', 'Cancelled', 'Needs Review'];
+let products = [];
+
+// ---- tabs ----
+$$('.admin-tabs .chip').forEach((b) => (b.onclick = () => {
+  $$('.admin-tabs .chip').forEach((x) => x.classList.toggle('active', x === b));
+  ['dash', 'products', 'orders'].forEach((t) => ($('#tab-' + t).style.display = t === b.dataset.tab ? 'block' : 'none'));
+  if (b.dataset.tab === 'dash') loadStats();
+  if (b.dataset.tab === 'products') loadProducts();
+  if (b.dataset.tab === 'orders') loadOrders();
+}));
+
+// ---- dashboard ----
+async function loadStats() {
+  const s = await api('/api/admin/stats');
+  const items = [
+    ['Revenue', money(s.revenue)], ['Total orders', s.orders], ['Pending orders', s.pending],
+    ['Products', s.products], ['Low stock (≤5)', s.lowStock], ['Customers', s.customers],
+  ];
+  $('#stats').innerHTML = items.map(([l, v]) => `<div class="stat"><div class="v">${v}</div><div class="l">${l}</div></div>`).join('');
+}
+
+// ---- products ----
+async function loadProducts() {
+  ({ products } = await api('/api/admin/products'));
+  $('#cats').innerHTML = [...new Set(products.map((p) => p.category))].map((c) => `<option value="${esc(c)}">`).join('');
+  $('#ptable').innerHTML = products.length ? products.map((p) => `
+    <tr>
+      <td><div class="mini">${productImage(p)}</div></td>
+      <td><strong>${esc(p.name)}</strong><br><span style="color:var(--muted);font-size:.8rem">Sizes: ${esc(p.sizes)}</span></td>
+      <td>${esc(p.category)}</td>
+      <td>${money(p.price)}</td>
+      <td style="${p.stock <= 5 ? 'color:var(--bad);font-weight:700' : ''}">${p.stock}</td>
+      <td><span class="pill ${p.active ? 'Paid' : 'Cancelled'}">${p.active ? 'Visible' : 'Hidden'}</span></td>
+      <td><div class="actions">
+        <button class="btn ghost small" data-edit="${p.id}">Edit</button>
+        <button class="btn danger small" data-del="${p.id}">Delete</button>
+      </div></td>
+    </tr>`).join('') : '<tr><td colspan="7" class="empty">No products yet. Add your first product above.</td></tr>';
+  $$('[data-edit]').forEach((b) => (b.onclick = () => editProduct(parseInt(b.dataset.edit))));
+  $$('[data-del]').forEach((b) => (b.onclick = () => delProduct(parseInt(b.dataset.del))));
+}
+
+function resetForm() {
+  $('#pform').reset();
+  $('#p-id').value = '';
+  $('#p-sizes').value = 'S,M,L,XL';
+  $('#p-active').checked = true;
+  $('#form-title').textContent = 'Add new product';
+  $('#p-cancel').style.display = 'none';
+}
+
+function editProduct(id) {
+  const p = products.find((x) => x.id === id);
+  if (!p) return;
+  $('#p-id').value = p.id;
+  $('#p-name').value = p.name;
+  $('#p-cat').value = p.category;
+  $('#p-price').value = p.price;
+  $('#p-stock').value = p.stock;
+  $('#p-sizes').value = p.sizes;
+  $('#p-desc').value = p.description;
+  $('#p-url').value = p.image_url && !p.image_url.startsWith('/uploads/') ? p.image_url : '';
+  $('#p-file').value = '';
+  $('#p-active').checked = p.active;
+  $('#form-title').textContent = 'Edit product #' + p.id + ' (leave image empty to keep current)';
+  $('#p-cancel').style.display = 'inline-block';
+  $('#pform').scrollIntoView({ behavior: 'smooth' });
+}
+$('#p-cancel').onclick = resetForm;
+
+$('#pform').onsubmit = async (e) => {
+  e.preventDefault();
+  const btn = $('#p-save');
+  btn.disabled = true;
+  try {
+    const fd = new FormData();
+    fd.append('name', $('#p-name').value);
+    fd.append('category', $('#p-cat').value);
+    fd.append('price', $('#p-price').value);
+    fd.append('stock', $('#p-stock').value);
+    fd.append('sizes', $('#p-sizes').value);
+    fd.append('description', $('#p-desc').value);
+    fd.append('image_url', $('#p-url').value);
+    fd.append('active', $('#p-active').checked);
+    if ($('#p-file').files[0]) fd.append('image', $('#p-file').files[0]);
+    const id = $('#p-id').value;
+    await api(id ? '/api/admin/products/' + id : '/api/admin/products', { method: id ? 'PUT' : 'POST', body: fd });
+    toast(id ? 'Product updated' : 'Product added');
+    resetForm();
+    loadProducts();
+  } catch (err) { toast(err.message, true); }
+  btn.disabled = false;
+};
+
+async function delProduct(id) {
+  if (!confirm('Delete this product permanently? (Tip: use Edit → untick "Show in store" to just hide it)')) return;
+  try { await api('/api/admin/products/' + id, { method: 'DELETE' }); toast('Deleted'); loadProducts(); }
+  catch (e) { toast(e.message, true); }
+}
+
+// ---- orders ----
+async function loadOrders() {
+  const { orders } = await api('/api/admin/orders');
+  $('#otable').innerHTML = orders.length ? orders.map((o) => `
+    <tr>
+      <td><strong>#${o.id}</strong><br><span style="color:var(--muted);font-size:.78rem">${new Date(o.created_at).toLocaleString('en-IN')}</span></td>
+      <td>${esc(o.address.name)}<br><span style="font-size:.8rem">📞 ${esc(o.address.phone)}</span><br>
+        <span style="color:var(--muted);font-size:.78rem">${esc(o.address.line)}, ${esc(o.address.city)}, ${esc(o.address.state)} - ${esc(o.address.pincode)}</span></td>
+      <td>${o.items.map((i) => `${esc(i.name)} (${esc(i.size || '-')}) × ${i.qty}`).join('<br>')}</td>
+      <td><strong>${money(o.total)}</strong></td>
+      <td><span class="pill ${cls(o.payment_status)}">${esc(o.payment_method)} · ${esc(o.payment_status)}</span>
+        ${o.razorpay_payment_id ? `<br><span style="font-size:.72rem;color:var(--muted)">${esc(o.razorpay_payment_id)}</span>` : ''}</td>
+      <td>${o.status === 'Awaiting Payment'
+        ? '<span class="pill AwaitingPayment">Awaiting Payment</span>'
+        : `<select data-oid="${o.id}">${STATUSES.map((s) => `<option ${s === o.status ? 'selected' : ''}>${s}</option>`).join('')}</select>`}</td>
+    </tr>`).join('') : '<tr><td colspan="6" class="empty">No orders yet.</td></tr>';
+  $$('[data-oid]').forEach((s) => (s.onchange = async () => {
+    try { await api('/api/admin/orders/' + s.dataset.oid + '/status', { method: 'PUT', body: { status: s.value } }); toast('Order updated'); loadOrders(); }
+    catch (e) { toast(e.message, true); loadOrders(); }
+  }));
+}
+
+(async () => {
+  const user = await initHeader();
+  if (!user) return (location.href = '/login?next=/admin');
+  if (user.role !== 'admin') { document.querySelector('main').innerHTML = '<div class="panel empty">Admin access only. <a href="/" style="color:var(--accent)">Go to shop</a></div>'; return; }
+  loadStats().catch((e) => toast(e.message, true));
+})();
+</script>
+</body>
+</html>
